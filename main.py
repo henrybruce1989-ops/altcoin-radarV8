@@ -29,7 +29,7 @@ API_KEY = os.getenv("API_KEY", "")
 API_SECRET = os.getenv("API_SECRET", "")
 SERVER_CHAN_KEY = os.getenv("SERVER_CHAN_KEY", "sctp14659thuntd89pzhhlsmbwynooxu")
 
-VOLUME_THRESHOLD_24H = 15000000
+VOLUME_THRESHOLD_24H = 8000000
 SIGNAL_CSV = "signals_3m.csv"
 SCAN_INTERVAL = 10
 
