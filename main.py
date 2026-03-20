@@ -33,10 +33,10 @@ SERVER_CHAN_KEY = os.getenv("SERVER_CHAN_KEY", "sctp14659thuntd89pzhhlsmbwynooxu
 SIGNAL_COOLDOWN_SECONDS = 60              # 同一币种同方向信号冷却时间（秒）
 
 # 时间窗口聚合参数
-AGGREGATION_WINDOW_SECONDS = 30            # 聚合窗口长度（秒）
-VOLUME_RATIO_THRESHOLD = 5.0              # 窗口成交量是历史同期期望成交量的倍数
-MIN_PRICE_CHANGE_PERCENT = 0.3            # 最小价格变化百分比（0.2%）
-HISTORICAL_WINDOW_SECONDS = 600            # 历史平均成交量窗口（秒）
+AGGREGATION_WINDOW_SECONDS = 60            # 聚合窗口长度（秒）
+VOLUME_RATIO_THRESHOLD = 8.0              # 窗口成交量是历史同期期望成交量的倍数
+MIN_PRICE_CHANGE_PERCENT = 1.2            # 最小价格变化百分比（0.2%）
+HISTORICAL_WINDOW_SECONDS = 1200            # 历史平均成交量窗口（秒）
 
 # 价格突破验证严格程度（收盘价与窗口极值的最大偏差比例）
 # 例如 0.002 表示收盘价需高于最高价的 99.8%（即差距小于0.2%）
