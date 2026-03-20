@@ -2,3 +2,5 @@ python-binance
 pandas
 numpy
 requests
+aiohttp>=3.8.0
+websockets>=10.0
