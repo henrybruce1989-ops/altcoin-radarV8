@@ -34,7 +34,7 @@ SIGNAL_COOLDOWN_SECONDS = 60              # 同一币种同方向信号冷却时
 
 # 时间窗口聚合参数
 AGGREGATION_WINDOW_SECONDS = 30            # 聚合窗口长度（秒）
-VOLUME_RATIO_THRESHOLD = 10.0              # 窗口成交量是历史同期期望成交量的倍数
+VOLUME_RATIO_THRESHOLD = 5.0              # 窗口成交量是历史同期期望成交量的倍数
 MIN_PRICE_CHANGE_PERCENT = 0.3            # 最小价格变化百分比（0.2%）
 HISTORICAL_WINDOW_SECONDS = 600            # 历史平均成交量窗口（秒）
 
