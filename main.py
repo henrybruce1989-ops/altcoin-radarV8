@@ -21,8 +21,8 @@ WEBSOCKET_BASE_URL = "wss://fstream.binance.com"
 
 VOLUME_THRESHOLD_USDT = 8_000_000          # 24h交易额门槛（USDT）
 
-MAX_STREAMS_PER_CONNECTION = 30           # 每个连接订阅的币种数（降低压力）
-MESSAGE_QUEUE_SIZE = 500                  # 每个连接的消息队列大小
+MAX_STREAMS_PER_CONNECTION = 20           # 每个连接订阅的币种数（降低压力）
+MESSAGE_QUEUE_SIZE = 1000                 # 每个连接的消息队列大小（增大缓冲）
 RECONNECT_DELAY = 5                       # 重连延迟（秒）
 KEEPALIVE_INTERVAL = 30                   # 心跳间隔（秒）
 
@@ -34,9 +34,9 @@ SIGNAL_COOLDOWN_SECONDS = 60              # 同一币种同方向信号冷却时
 
 # 时间窗口聚合参数
 AGGREGATION_WINDOW_SECONDS = 30            # 聚合窗口长度（秒）
-VOLUME_RATIO_THRESHOLD = 5.0              # 窗口成交量是历史同期期望成交量的倍数
-MIN_PRICE_CHANGE_PERCENT = 0.4            # 最小价格变化百分比（0.2%）
-HISTORICAL_WINDOW_SECONDS = 300            # 历史平均成交量窗口（秒）
+VOLUME_RATIO_THRESHOLD = 10.0              # 窗口成交量是历史同期期望成交量的倍数
+MIN_PRICE_CHANGE_PERCENT = 0.3            # 最小价格变化百分比（0.2%）
+HISTORICAL_WINDOW_SECONDS = 600            # 历史平均成交量窗口（秒）
 
 # 价格突破验证严格程度（收盘价与窗口极值的最大偏差比例）
 # 例如 0.002 表示收盘价需高于最高价的 99.8%（即差距小于0.2%）
@@ -347,6 +347,8 @@ class ConnectionHandler:
         self.queue = Queue(maxsize=MESSAGE_QUEUE_SIZE)
         self.running = False
         self.detector_manager = detector_manager
+        # 用于节流警告
+        self.last_queue_full_warning = 0
 
     async def _producer(self):
         try:
@@ -354,7 +356,11 @@ class ConnectionHandler:
                 try:
                     self.queue.put_nowait(message)
                 except QueueFull:
-                    logger.warning(f"Queue full for {self.url[:50]}")
+                    # 每10秒最多打印一次警告
+                    now = time.time()
+                    if now - self.last_queue_full_warning >= 10:
+                        logger.warning(f"Queue full for {self.url[:50]}")
+                        self.last_queue_full_warning = now
         except websockets.ConnectionClosed:
             logger.error("Connection closed")
         except Exception as e:
@@ -464,14 +470,13 @@ async def refresh_symbols_task(rest_client: BinanceRestClient, ws_manager: WebSo
             if active != ws_manager.active_symbols:
                 logger.info(f"Symbols changed. New count: {len(active)}")
                 await ws_manager.update_symbols(active)
-            else:
-                logger.debug(f"Symbols unchanged: {len(active)} active")
+            # 无变化时不输出日志，避免刷屏
         except Exception as e:
             logger.exception(f"Error refreshing symbols: {e}")
         await asyncio.sleep(SYMBOL_REFRESH_INTERVAL)
 
 async def main():
-    logger.info("Starting Binance Futures Scraper Monitor (strict mode)...")
+    logger.info("Starting Binance Futures Scraper Monitor (optimized)...")
     detector_manager = DetectorManager()
     ws_manager = WebSocketManager(detector_manager)
 
