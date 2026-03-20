@@ -29,7 +29,7 @@ KEEPALIVE_INTERVAL = 30                   # 心跳间隔（秒）
 SYMBOL_REFRESH_INTERVAL = 600             # 活跃币种刷新间隔（秒）
 LOG_LEVEL = "INFO"
 
-SERVER_CHAN_KEY = os.getenv("SERVER_CHAN_KEY", "")
+SERVER_CHAN_KEY = os.getenv("SERVER_CHAN_KEY", "sctp14659thuntd89pzhhlsmbwynooxu")
 SIGNAL_COOLDOWN_SECONDS = 60              # 同一币种同方向信号冷却时间（秒）
 
 # 时间窗口聚合参数
