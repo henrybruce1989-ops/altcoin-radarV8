@@ -19,47 +19,41 @@ from asyncio import Queue, QueueFull
 REST_BASE_URL = "https://fapi.binance.com"
 WEBSOCKET_BASE_URL = "wss://fstream.binance.com"
 
-VOLUME_THRESHOLD_USDT = 8_000_000          # 24h交易额门槛（USDT）
+VOLUME_THRESHOLD_USDT = 8_000_000
 
-MAX_STREAMS_PER_CONNECTION = 20           # 每个连接订阅的币种数（降低压力）
-MESSAGE_QUEUE_SIZE = 1000                 # 每个连接的消息队列大小（增大缓冲）
-RECONNECT_DELAY = 5                       # 重连延迟（秒）
-KEEPALIVE_INTERVAL = 30                   # 心跳间隔（秒）
+MAX_STREAMS_PER_CONNECTION = 20
+MESSAGE_QUEUE_SIZE = 1000
+RECONNECT_DELAY = 5
+KEEPALIVE_INTERVAL = 30
 
-SYMBOL_REFRESH_INTERVAL = 600             # 活跃币种刷新间隔（秒）
+SYMBOL_REFRESH_INTERVAL = 600
 LOG_LEVEL = "INFO"
 
 SERVER_CHAN_KEY = os.getenv("SERVER_CHAN_KEY", "sctp14659thuntd89pzhhlsmbwynooxu")
-SIGNAL_COOLDOWN_SECONDS = 60              # 同一币种同方向信号冷却时间（秒）
+SIGNAL_COOLDOWN_SECONDS = 60
 
-# 时间窗口聚合参数
-AGGREGATION_WINDOW_SECONDS = 60            # 聚合窗口长度（秒）
-VOLUME_RATIO_THRESHOLD = 8.0              # 窗口成交量是历史同期期望成交量的倍数
-MIN_PRICE_CHANGE_PERCENT = 1.2            # 最小价格变化百分比（0.2%）
-HISTORICAL_WINDOW_SECONDS = 1200            # 历史平均成交量窗口（秒）
+AGGREGATION_WINDOW_SECONDS = 60
+VOLUME_RATIO_THRESHOLD = 8.0
+MIN_PRICE_CHANGE_PERCENT = 1.2
+HISTORICAL_WINDOW_SECONDS = 1200
 
-# 价格突破验证严格程度（收盘价与窗口极值的最大偏差比例）
-# 例如 0.002 表示收盘价需高于最高价的 99.8%（即差距小于0.2%）
-BREAKTHROUGH_STRICTNESS = 0.002           # 0.2%
-
-# 是否要求连续两个窗口都满足条件（可大幅减少假信号，但会引入最多3秒延迟）
+BREAKTHROUGH_STRICTNESS = 0.002
 REQUIRE_CONSECUTIVE_WINDOWS = True
 
 CSV_FILE_PATH = "signals.csv"
 
-# 日志配置
 logging.basicConfig(
     level=getattr(logging, LOG_LEVEL),
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[logging.StreamHandler(sys.stdout)]
 )
 logger = logging.getLogger(__name__)
-
 BEIJING_TZ = timezone(timedelta(hours=8))
 
+
 def get_beijing_time() -> str:
-    """返回格式化的北京时间字符串"""
     return datetime.now(BEIJING_TZ).strftime("%Y-%m-%d %H:%M:%S")
+
 
 # ==================== 币种筛选 ====================
 class BinanceRestClient:
@@ -96,44 +90,42 @@ class BinanceRestClient:
         tickers = await self.get_24h_ticker()
         return self.filter_active_symbols(tickers)
 
+
 # ==================== 成交记录 ====================
 class TradeRecord:
     __slots__ = ('timestamp', 'price', 'quantity', 'is_buyer_maker')
+
     def __init__(self, timestamp: float, price: float, quantity: float, is_buyer_maker: bool):
         self.timestamp = timestamp
         self.price = price
         self.quantity = quantity
         self.is_buyer_maker = is_buyer_maker
 
+
 # ==================== 异动检测器 ====================
 class SymbolDetector:
+    # ====== 核心逻辑完全保留 ======
     def __init__(self, symbol: str):
         self.symbol = symbol
-        self.recent_trades = deque()                       # 存储最近几秒的成交
-        self.historical_quantity = deque()                 # (timestamp, quantity)
-        self.historical_total_quantity = 0.0               # 历史总成交量
-        self.signal_history = deque(maxlen=2)              # 用于连续窗口验证
+        self.recent_trades = deque()
+        self.historical_quantity = deque()
+        self.historical_total_quantity = 0.0
+        self.signal_history = deque(maxlen=2)
 
     def add_trade(self, timestamp: float, price: float, quantity: float, is_buyer_maker: bool):
-        """添加一笔成交，更新窗口和历史数据"""
-        # 加入最近成交队列
         self.recent_trades.append(TradeRecord(timestamp, price, quantity, is_buyer_maker))
-        # 清理超过聚合窗口+1秒的旧记录
         cutoff = timestamp - (AGGREGATION_WINDOW_SECONDS + 1)
         while self.recent_trades and self.recent_trades[0].timestamp < cutoff:
             self.recent_trades.popleft()
 
-        # 加入历史成交量队列
         self.historical_quantity.append((timestamp, quantity))
         self.historical_total_quantity += quantity
-        # 清理超过历史窗口的旧数据
         hist_cutoff = timestamp - HISTORICAL_WINDOW_SECONDS
         while self.historical_quantity and self.historical_quantity[0][0] < hist_cutoff:
             old_ts, old_qty = self.historical_quantity.popleft()
             self.historical_total_quantity -= old_qty
 
     def get_window_aggregate(self) -> Optional[Dict]:
-        """获取当前时间窗口内的聚合数据（累计成交量、最高价、最低价、开盘价、收盘价）"""
         if len(self.recent_trades) == 0:
             return None
         now = self.recent_trades[-1].timestamp
@@ -157,10 +149,8 @@ class SymbolDetector:
         }
 
     def get_historical_avg_quantity_per_second(self) -> float:
-        """返回过去 HISTORICAL_WINDOW_SECONDS 秒内的平均每秒成交量"""
         if self.historical_total_quantity == 0 or len(self.historical_quantity) == 0:
             return 0.0
-        # 实际时间跨度（秒）
         if len(self.historical_quantity) >= 2:
             time_span = self.historical_quantity[-1][0] - self.historical_quantity[0][0]
             if time_span > 0:
@@ -168,36 +158,26 @@ class SymbolDetector:
         return self.historical_total_quantity / HISTORICAL_WINDOW_SECONDS
 
     def _check_single_window(self) -> Optional[Tuple[str, Dict]]:
-        """单窗口检查逻辑，返回 (signal_type, details) 或 None"""
         window = self.get_window_aggregate()
         if not window:
             return None
-
-        # 计算历史平均每秒成交量
         avg_qty_per_sec = self.get_historical_avg_quantity_per_second()
         if avg_qty_per_sec == 0:
             return None
-
         expected_qty = avg_qty_per_sec * AGGREGATION_WINDOW_SECONDS
         if expected_qty == 0:
             return None
-
         qty_ratio = window['total_quantity'] / expected_qty
         if qty_ratio < VOLUME_RATIO_THRESHOLD:
             return None
-
-        # 价格变化
         open_price = window['open_price']
         close_price = window['close_price']
         price_change_pct = (close_price - open_price) / open_price * 100
-
         if abs(price_change_pct) < MIN_PRICE_CHANGE_PERCENT:
             return None
 
-        # 方向判断与突破验证
         if price_change_pct > 0:
             signal_type = "BULLISH_SPIKE"
-            # 收盘价必须非常接近窗口内最高价（差距小于 BREAKTHROUGH_STRICTNESS）
             if (window['max_price'] - close_price) / close_price > BREAKTHROUGH_STRICTNESS:
                 return None
         else:
@@ -215,24 +195,20 @@ class SymbolDetector:
         return (signal_type, details)
 
     def check_signal(self) -> Optional[Tuple[str, Dict]]:
-        """根据配置决定是否要求连续窗口"""
         signal = self._check_single_window()
         if not signal:
             if REQUIRE_CONSECUTIVE_WINDOWS:
                 self.signal_history.append(False)
             return None
-
         if not REQUIRE_CONSECUTIVE_WINDOWS:
             return signal
-
-        # 需要连续窗口
         self.signal_history.append(True)
         if len(self.signal_history) == 2 and all(self.signal_history):
-            # 连续两个窗口满足，触发信号
             return signal
         return None
 
-# ==================== 检测器管理器 ====================
+
+# ==================== 管理器 ====================
 class DetectorManager:
     def __init__(self):
         self.detectors: Dict[str, SymbolDetector] = {}
@@ -269,7 +245,6 @@ class DetectorManager:
         signal = detector.check_signal()
         if signal:
             signal_type, details = signal
-            # 冷却检查
             async with self.cooldown_lock:
                 last_push = self.cooldown.get((symbol, signal_type), 0)
                 if now - last_push < SIGNAL_COOLDOWN_SECONDS:
@@ -337,7 +312,6 @@ class DetectorManager:
                     ])
             except Exception as e:
                 logger.error(f"Failed to write CSV: {e}")
-
 # ==================== WebSocket 连接管理 ====================
 class ConnectionHandler:
     def __init__(self, streams: List[str], detector_manager: DetectorManager):
@@ -347,7 +321,6 @@ class ConnectionHandler:
         self.queue = Queue(maxsize=MESSAGE_QUEUE_SIZE)
         self.running = False
         self.detector_manager = detector_manager
-        # 用于节流警告
         self.last_queue_full_warning = 0
 
     async def _producer(self):
@@ -356,7 +329,6 @@ class ConnectionHandler:
                 try:
                     self.queue.put_nowait(message)
                 except QueueFull:
-                    # 每10秒最多打印一次警告
                     now = time.time()
                     if now - self.last_queue_full_warning >= 10:
                         logger.warning(f"Queue full for {self.url[:50]}")
@@ -435,6 +407,7 @@ class ConnectionHandler:
         if self.websocket:
             await self.websocket.close()
 
+
 class WebSocketManager:
     def __init__(self, detector_manager: DetectorManager):
         self.detector_manager = detector_manager
@@ -461,6 +434,7 @@ class WebSocketManager:
         for conn in self.connections:
             await conn.close()
 
+
 # ==================== 主程序 ====================
 async def refresh_symbols_task(rest_client: BinanceRestClient, ws_manager: WebSocketManager):
     while True:
@@ -470,13 +444,13 @@ async def refresh_symbols_task(rest_client: BinanceRestClient, ws_manager: WebSo
             if active != ws_manager.active_symbols:
                 logger.info(f"Symbols changed. New count: {len(active)}")
                 await ws_manager.update_symbols(active)
-            # 无变化时不输出日志，避免刷屏
         except Exception as e:
             logger.exception(f"Error refreshing symbols: {e}")
         await asyncio.sleep(SYMBOL_REFRESH_INTERVAL)
 
+
 async def main():
-    logger.info("Starting Binance Futures Scraper Monitor (optimized)...")
+    logger.info("Starting Binance Futures Scraper Monitor (stable & auto-update)...")
     detector_manager = DetectorManager()
     ws_manager = WebSocketManager(detector_manager)
 
@@ -491,6 +465,7 @@ async def main():
         finally:
             refresh_task.cancel()
             await ws_manager.close_all()
+
 
 if __name__ == "__main__":
     try:
